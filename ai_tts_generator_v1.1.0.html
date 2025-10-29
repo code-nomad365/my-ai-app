@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- 更新：版本標示 -->
-    <title>AI短文語音生成器 v1.1.1</title>
+    <!-- v1.1.4 更新：版本標示 -->
+    <title>AI短文語音生成器 v1.1.4</title>
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -35,9 +35,35 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        /* v1.1.3 新增：歷史紀錄樣式 */
+        .history-item {
+            border: 1px solid #e5e7eb; /* gray-200 */
+            padding: 0.75rem;
+            border-radius: 0.5rem; /* rounded-lg */
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .history-item:hover {
+            background-color: #f9fafb; /* gray-50 */
+        }
+        .history-item-words {
+            font-weight: 600; /* font-semibold */
+            color: #4b5563; /* gray-600 */
+            margin-bottom: 0.25rem;
+        }
+        .history-item-passage {
+            font-size: 0.875rem; /* text-sm */
+            color: #6b7280; /* gray-500 */
+            /* 限制行數 */
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
     </style>
 </head>
-<!-- 靠上對齊 (v1.1.1: 修改 body 為 flex-col, items-center 以便放置卡片外的按鈕) -->
 <body class="bg-gray-100 flex flex-col items-center min-h-screen p-4 sm:p-8 pt-16 sm:pt-24">
 
     <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-xl">
@@ -45,60 +71,62 @@
         
         <!-- 1. 輸入區域 -->
         <div class="mb-6">
-            <label for="word-input" class="block text-sm font-medium text-gray-700 mb-2">請輸入英文字（用逗號或空白分隔）:</label>
-            <textarea id="word-input" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="例如: study, subject, honest, science, library, history, homework, important"></textarea>
+            <label for="word-input" class="block text-sm font-medium text-gray-700 mb-2">請輸入英文字 (用頓號、逗號或空白分隔):</label>
+            <textarea id="word-input" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="例如: history、homework、important"></textarea>
             
-            <div class="mt-4 flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
-                <button id="generate-button" class="w-full sm:w-3/4 bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
+            <div class="mt-4 flex flex-col sm:flex-row gap-3">
+                <button id="generate-button" class="w-full sm:w-2/3 bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
                     生成短文
                 </button>
-                <button id="clear-button" class="w-full sm:w-1/4 bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
+                <button id="clear-button" class="w-full sm:w-1/3 bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
                     清除
                 </button>
             </div>
             <p id="passage-status" class="text-center text-sm text-gray-500 mt-3 h-5"></p>
         </div>
 
+        <!-- v1.1.3: 歷史紀錄區域 -->
+        <div id="history-section" class="mb-6 border-t pt-6">
+             <h2 class="text-xl font-semibold text-gray-800 mb-4">歷史紀錄 (最近 3 筆)</h2>
+             <div id="history-list">
+                <!-- 歷史紀錄將動態插入這裡 -->
+             </div>
+        </div>
+
         <!-- 2. 輸出區域 (預設隱藏) -->
         <div id="output-section" class="hidden border-t pt-6">
             <h2 class="text-xl font-semibold text-gray-800 mb-4">生成的短文:</h2>
-            
             <p id="passage-display" class="text-lg text-gray-700 bg-gray-50 p-4 rounded-lg leading-relaxed mb-6 min-h-[50px]">
                 <!-- 短文將顯示在這裡 -->
             </p>
 
+            <!-- v1.1.4: 移除 grid 和 play-sync-button，恢復單一按鈕 -->
             <button id="play-button" class="w-full bg-green-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
-                播放語音 (英文)
+                播放語音
             </button>
             <audio id="audio-player" class="w-full mt-4" controls></audio>
             <p id="audio-status" class="text-center text-sm text-gray-500 mt-3 h-5"></p>
 
-
             <button id="translate-button" class="mt-6 w-full bg-indigo-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
                 翻譯成中文
             </button>
-            <p id="translation-status" class="text-center text-sm text-gray-500 mt-3 h-5"></p>
-
-            <div id="translation-section" class="hidden mt-4">
-                <h3 class="text-lg font-semibold text-gray-800 mb-2">中文翻譯:</h3>
-                <p id="translation-display" class="text-lg text-gray-700 bg-indigo-50 p-4 rounded-lg leading-relaxed">
-                    <!-- 翻譯將顯示在這裡 -->
-                </p>
-            </div>
             
+            <div id="translation-output" class="hidden mt-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">中文翻譯:</h2>
+                <p id="translation-display" class="text-lg text-gray-700 bg-gray-50 p-4 rounded-lg leading-relaxed min-h-[50px]"></p>
+                <p id="translation-status" class="text-center text-sm text-gray-500 mt-3 h-5"></p>
+            </div>
         </div>
 
-        <!-- 更新：版本標示 -->
+        <!-- v1.1.4 更新：版本標示 -->
         <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t border-gray-100">
-            版本 v1.1.1
+            版本 v1.1.4
         </div>
     </div>
-
-    <!-- v1.1.1 新增：重新開始按鈕 (卡片外部) -->
+    
     <button id="restart-button-bottom" class="w-full max-w-xl mt-6 bg-gray-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 transition-all duration-300 ease-in-out">
         重新開始
     </button>
-    <!-- v1.1.1 新增：底部間距 -->
     <div class="h-16"></div> 
 
 
@@ -106,112 +134,120 @@
         // --- DOM 元素 ---
         const wordInput = document.getElementById('word-input');
         const generateButton = document.getElementById('generate-button');
-        const clearButton = document.getElementById('clear-button'); 
+        const clearButton = document.getElementById('clear-button');
         const passageStatus = document.getElementById('passage-status');
         
         const outputSection = document.getElementById('output-section');
         const passageDisplay = document.getElementById('passage-display');
         
-        const translateButton = document.getElementById('translate-button');
-        const translationSection = document.getElementById('translation-section');
-        const translationDisplay = document.getElementById('translation-display');
-        const translationStatus = document.getElementById('translation-status');
-
         const playButton = document.getElementById('play-button');
+        // v1.1.4: 移除 playSyncButton
         const audioPlayer = document.getElementById('audio-player');
         const audioStatus = document.getElementById('audio-status');
-        // v1.1.1 新增
-        const restartButtonBottom = document.getElementById('restart-button-bottom');
 
-        // --- API 設定 (v1.1.0 修改) ---
-        // 不再需要 API Key，它存在於後端伺服器上。
+        const translateButton = document.getElementById('translate-button');
+        const translationOutput = document.getElementById('translation-output');
+        const translationDisplay = document.getElementById('translation-display');
+        const translationStatus = document.getElementById('translation-status');
         
-        // 舊的：
-        // const textGenApiUrl = `https://generativelanguage.googleapis.com...`;
-        // const ttsApiUrl = `https://generativelanguage.googleapis.com...`;
+        const restartButtonBottom = document.getElementById('restart-button-bottom');
+        
+        const historySection = document.getElementById('history-section');
+        const historyList = document.getElementById('history-list');
 
-        // 新的：指向 Netlify 伺服器功能 (相對路徑)
-        // 注意：我們移除了 ?key=${apiKey}，因為金鑰在後端處理
+        // v1.1.4: 移除 Web Speech API 相關變數
+        
+        // --- API 設定 ---
         const textGenApiUrl = `/.netlify/functions/generate-text`;
         const ttsApiUrl = `/.netlify/functions/generate-audio`;
-        // --- 修改結束 ---
+        
+        // --- v1.1.3: 儲存相關 ---
+        const HISTORY_KEY = 'passageHistory';
+        let history = [];
 
 
         // --- 事件監聽 ---
+        document.addEventListener('DOMContentLoaded', loadHistory); 
         generateButton.addEventListener('click', handleGeneratePassage);
         clearButton.addEventListener('click', handleClear); 
         playButton.addEventListener('click', handlePlayAudio);
         translateButton.addEventListener('click', handleTranslatePassage); 
-        // v1.1.1 新增
         restartButtonBottom.addEventListener('click', handleClear);
+        // v1.1.4: 移除 playSyncButton 監聽
+        historyList.addEventListener('click', handleHistoryClick); 
+
+
+        /**
+         * v1.0.2: 處理：清除所有內容
+         */
+        function handleClear() {
+            wordInput.value = "";
+            outputSection.classList.add('hidden');
+            passageDisplay.innerHTML = "";
+            passageStatus.textContent = "";
+            audioStatus.textContent = "";
+            audioPlayer.src = "";
+            translationOutput.classList.add('hidden'); 
+            translationDisplay.textContent = ""; 
+            translationStatus.textContent = ""; 
+            
+            // v1.1.4: 移除 Web Speech 相關邏輯
+        }
 
         /**
          * 處理：生成短文
          */
         async function handleGeneratePassage() {
-            const words = wordInput.value.trim();
-            if (!words) {
+            const words = wordInput.value.trim().split(/[\s、,]+/).filter(Boolean);
+            if (words.length === 0) {
                 setStatus(passageStatus, "請至少輸入一個單字。", "error");
-                return;
-            }
-
-            const inputWords = words.split(/[\s,、]+/).filter(Boolean);
-
-            if (inputWords.length === 0) {
-                setStatus(passageStatus, "請輸入有效的單字。", "error");
                 return;
             }
 
             setLoading(generateButton, true);
             setStatus(passageStatus, "短文生成中，請稍候...", "info");
-            outputSection.classList.add('hidden'); 
-            passageDisplay.innerHTML = ""; 
-            audioPlayer.src = ""; 
+            handleClear(); 
+            outputSection.classList.add('hidden');
 
-            translationSection.classList.add('hidden');
-            translationDisplay.textContent = "";
-            setStatus(translationStatus, "", "info");
-
-            const prompt = `You MUST write a short, coherent paragraph (about 2-3 sentences) that uses ALL of the following English words: ${inputWords.join(', ')}. Every single word from the list must be included. Do not add any preamble. Only return the paragraph text.`;
+            const prompt = `You MUST write a short, simple, coherent English paragraph (about 2-3 sentences) that correctly uses ALL of the following words: ${words.join(', ')}.`;
 
             try {
-                // v1.1.0 修改：Payload 現在是我們發送到 *自己* 伺服器的內容
                 const payload = {
-                    // 我們的後端代理將會讀取這個 'prompt' 
                     prompt: prompt,
-                    // 我們的後端代理也會讀取這個 'systemInstruction'
-                    systemInstruction: "You are a helpful assistant. You must generate a single paragraph that uses all the user's provided words. Output only the paragraph text, with no preamble or any other text."
+                    systemInstruction: "You are a helpful assistant. You MUST use all the provided words. You only output the single generated paragraph text, with no preamble or any other text."
                 };
 
                 const response = await fetchWithBackoff(textGenApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // v1.1.0 修改：我們將 prompt 包裝在一個 JSON 物件中
                     body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `API 請求失敗: ${response.status}`);
                 }
 
-                // v1.1.0 修改：回應 *來自* 我們的伺服器，它已經包含了 Google 的回應
                 const result = await response.json();
-                const passage = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                const passage = result.text;
 
                 if (passage) {
-                    const escapedWords = inputWords.map(word => word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
-                    const regex = new RegExp(`\\b(${escapedWords.join('|')})\\b`, 'gi');
-                    const highlightedPassage = passage.replace(regex, '<mark class="bg-yellow-200 rounded px-1">$1</mark>');
+                    let highlightedPassage = escapeHTML(passage); 
+                    words.forEach(word => {
+                        const regex = new RegExp(`(${escapeRegExp(word)})`, 'gi');
+                        highlightedPassage = highlightedPassage.replace(regex, `<mark class="bg-yellow-200 p-0.5 rounded">$1</mark>`);
+                    });
                     
                     passageDisplay.innerHTML = highlightedPassage; 
+                    // v1.1.4: 移除 originalPassageHTML 
+                    
                     outputSection.classList.remove('hidden'); 
                     setStatus(passageStatus, "短文生成成功！", "success");
-                    setStatus(audioStatus, "", "info"); 
+                    
+                    saveHistory(words.join(', '), highlightedPassage);
+
+                    // v1.1.4: 移除 synth 檢查
                 } else {
-                    // 如果 Google API 出錯，result 可能會包含錯誤訊息
-                    if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
-                    }
                     throw new Error("API 未返回有效內容。");
                 }
 
@@ -224,7 +260,7 @@
         }
 
         /**
-         * 處理翻譯
+         * v1.0.8: 處理：翻譯短文
          */
         async function handleTranslatePassage() {
             const textToTranslate = passageDisplay.textContent;
@@ -235,38 +271,35 @@
 
             setLoading(translateButton, true);
             setStatus(translationStatus, "翻譯中...", "info");
-            translationSection.classList.add('hidden'); 
+            translationOutput.classList.remove('hidden');
+            translationDisplay.textContent = "";
 
-            const prompt = `Translate the following English text to Traditional Chinese: "${textToTranslate}". Only return the Traditional Chinese text, nothing else.`;
+            const prompt = `Translate the following English text to Traditional Chinese: ${textToTranslate}`;
 
             try {
-                // v1.1.0 修改：Payload 發送到我們的後端
                 const payload = {
                     prompt: prompt,
-                    systemInstruction: "You are a helpful assistant. You only output the Traditional Chinese translation, with no preamble or any other text."
+                    systemInstruction: "You are a translation assistant. You only output the Traditional Chinese translation, nothing else."
                 };
 
-                const response = await fetchWithBackoff(textGenApiUrl, { // 重複使用 textGenApiUrl
+                const response = await fetchWithBackoff(textGenApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `API 請求失敗: ${response.status}`);
                 }
-
+                
                 const result = await response.json();
-                const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                const translation = result.text;
 
-                if (translatedText) {
-                    translationDisplay.textContent = translatedText;
-                    translationSection.classList.remove('hidden'); 
+                if (translation) {
+                    translationDisplay.textContent = translation;
                     setStatus(translationStatus, "翻譯成功！", "success");
                 } else {
-                    if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
-                    }
                     throw new Error("API 未返回有效的翻譯內容。");
                 }
 
@@ -280,9 +313,11 @@
 
 
         /**
-         * 處理：播放語音 (英文原文)
+         * 處理：播放 AI 語音
          */
         async function handlePlayAudio() {
+            // v1.1.4: 移除 synth 相關邏輯
+            
             const textToSpeak = passageDisplay.textContent; 
             if (!textToSpeak) {
                 setStatus(audioStatus, "沒有可播放的文字。", "error");
@@ -290,30 +325,28 @@
             }
 
             setLoading(playButton, true);
-            setStatus(audioStatus, "語音生成中...", "info");
+            // v1.1.4: 移除 setLoading(playSyncButton, false); 
+            setStatus(audioStatus, "AI 語音生成中...", "info");
 
             try {
-                // v1.1.0 修改：Payload 發送到我們的後端
                 const payload = {
                     text: `Say clearly: ${textToSpeak}`
                 };
-
-                const response = await fetchWithBackoff(ttsApiUrl, { // 呼叫 ttsApiUrl
+                
+                const response = await fetchWithBackoff(ttsApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `API 請求失敗: ${response.status}`);
                 }
 
-                // v1.1.0 修改：回應來自我們的伺服器
                 const result = await response.json();
-                
-                const part = result?.candidates?.[0]?.content?.parts?.[0];
-                const audioData = part?.inlineData?.data;
-                const mimeType = part?.inlineData?.mimeType;
+                const audioData = result.audioData;
+                const mimeType = result.mimeType;
 
                 if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
                     const sampleRateMatch = mimeType.match(/rate=(\d+)/);
@@ -330,12 +363,9 @@
                     audioPlayer.src = audioUrl;
                     audioPlayer.play();
                     
-                    setStatus(audioStatus, "播放中...", "success");
+                    setStatus(audioStatus, "AI 語音播放中...", "success");
 
                 } else {
-                    if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
-                    }
                     throw new Error("從 API 回應中找不到有效的音訊數據。");
                 }
 
@@ -346,29 +376,89 @@
                 setLoading(playButton, false);
             }
         }
+        
+        // v1.1.4: 移除 handlePlaySyncAudio 整個函式
 
-        /**
-         * 處理清除功能
-         */
-        function handleClear() {
-            wordInput.value = "";
-            outputSection.classList.add('hidden');
-            passageDisplay.innerHTML = ""; 
-            audioPlayer.src = "";
-            audioPlayer.pause();
-            setStatus(passageStatus, "", "info");
-            setStatus(audioStatus, "", "info");
-            
-            translationSection.classList.add('hidden');
-            translationDisplay.innerHTML = "";
-            setStatus(translationStatus, "", "info");
-            
-            setLoading(generateButton, false);
-            setLoading(playButton, false);
-            setLoading(translateButton, false); 
+        // --- v1.1.3: 歷史紀錄輔助函式 ---
+
+        function loadHistory() {
+            try {
+                const storedHistory = localStorage.getItem(HISTORY_KEY);
+                if (storedHistory) {
+                    history = JSON.parse(storedHistory);
+                }
+            } catch (e) {
+                console.error("讀取歷史紀錄失敗:", e);
+                history = [];
+            }
+            renderHistory();
         }
 
-        // --- 輔助函式 (保持不變) ---
+        function saveHistory(words, passageHTML) {
+            const newEntry = {
+                id: new Date().getTime(),
+                words: words,
+                passage: passageHTML
+            };
+            
+            history.unshift(newEntry);
+            history = history.slice(0, 3);
+            
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+            } catch (e) {
+                console.error("儲存歷史紀錄失敗:", e);
+            }
+            
+            renderHistory();
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = ""; 
+            if (history.length === 0) {
+                historyList.innerHTML = `<p class="text-sm text-gray-500">目前沒有歷史紀錄。</p>`;
+                historySection.classList.add('hidden'); 
+            } else {
+                historySection.classList.remove('hidden'); 
+                history.forEach(entry => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.dataset.id = entry.id;
+                    
+                    const itemWords = document.createElement('div');
+                    itemWords.className = 'history-item-words';
+                    itemWords.textContent = `單字: ${entry.words}`;
+                    
+                    const itemPassage = document.createElement('div');
+                    itemPassage.className = 'history-item-passage';
+                    itemPassage.innerHTML = `短文: ${entry.passage}`; 
+                    
+                    item.appendChild(itemWords);
+                    item.appendChild(itemPassage);
+                    historyList.appendChild(item);
+                });
+            }
+        }
+
+        function handleHistoryClick(e) {
+            const item = e.target.closest('.history-item');
+            if (!item) return;
+            
+            const id = Number(item.dataset.id);
+            const entry = history.find(h => h.id === id);
+            
+            if (entry) {
+                handleClear(); 
+                wordInput.value = entry.words;
+                passageDisplay.innerHTML = entry.passage;
+                // v1.1.4: 移除 originalPassageHTML
+                outputSection.classList.remove('hidden');
+                setStatus(passageStatus, "已從歷史紀錄載入。", "success");
+            }
+        }
+
+
+        // --- 輔助函式 ---
 
         function setLoading(button, isLoading) {
             if (isLoading) {
@@ -382,24 +472,20 @@
 
         function setStatus(element, message, type = "info") {
             element.textContent = message;
-            if (type === "error") {
-                element.className = "text-center text-sm text-red-500 mt-3 h-5";
-            } else if (type === "success") {
-                element.className = "text-center text-sm text-green-500 mt-3 h-5";
-            } else {
-                element.className = "text-center text-sm text-gray-500 mt-3 h-5";
-            }
+            const classMap = {
+                "error": "text-center text-sm text-red-500 mt-3 h-5",
+                "success": "text-center text-sm text-green-500 mt-3 h-5",
+                "info": "text-center text-sm text-gray-500 mt-3 h-5"
+            };
+            element.className = classMap[type] || classMap["info"];
         }
         
         async function fetchWithBackoff(url, options, maxRetries = 3) {
             let delay = 1000; 
             for (let i = 0; i < maxRetries; i++) {
                 try {
-                    // v1.1.0 修改：不再需要 fetch(url, options) 中的 window.fetch
-                    // 我們可以直接使用 fetch
                     const response = await fetch(url, options);
                     if (response.status === 429 || (response.status >= 500 && response.status <= 599)) {
-                        // 我們的伺服器或 Google API 可能會過載
                         throw new Error(`Server error ${response.status}`);
                     }
                     return response;
@@ -458,9 +544,24 @@
                 view.setUint8(offset + i, string.charCodeAt(i));
             }
         }
+        
+        function escapeHTML(str) {
+            return str.replace(/[&<>"']/g, function(match) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                }[match];
+            });
+        }
+        
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
+        }
 
     </script>
 </body>
 </html>
-
 
