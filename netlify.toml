@@ -2,7 +2,17 @@
 [functions]
   directory = "netlify/functions/"
 
-# 這是必要的重定向規則，讓 /.netlify/functions/... 
-# 可以被前端的 /api/... 這樣更簡潔的路徑呼叫
-# 雖然我們在 v1.1.0 中沒有使用 /api，但這是標準做法
-# 為了簡單起見，v1.1.0 直接呼叫 /.netlify/functions/
+# --- v1.1.2 版新增 ---
+# 新增重定向規則 (Redirect Rule)
+# 這將解決 "Page not found" (404) 錯誤
+
+[[redirects]]
+  # 當使用者訪問根目錄 (首頁)
+  from = "/"
+  
+  # 顯示這個檔案
+  to = "/ai_tts_generator_v1.1.0.html"
+  
+  # 狀態 200 表示 "OK" (顯示內容)，而不是 301 (跳轉)
+  status = 200
+
