@@ -1,0 +1,8 @@
+# 這個檔案告訴 Netlify 我們的伺服器功能在哪裡
+[functions]
+  directory = "netlify/functions/"
+
+# 這是必要的重定向規則，讓 /.netlify/functions/... 
+# 可以被前端的 /api/... 這樣更簡潔的路徑呼叫
+# 雖然我們在 v1.1.0 中沒有使用 /api，但這是標準做法
+# 為了簡單起見，v1.1.0 直接呼叫 /.netlify/functions/
