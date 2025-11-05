@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- 更新：版本標示 -->
-    <title>AI短文語音生成器 v1.1.1</title>
+    <title>AI短文語音生成器 v1.2.0</title>
+    <!-- 安全性增強：添加 CSP -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; img-src 'self' data:; connect-src 'self' blob:; media-src 'self' blob:;">
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -90,7 +92,7 @@
 
         <!-- 更新：版本標示 -->
         <div class="text-center text-xs text-gray-400 mt-6 pt-4 border-t border-gray-100">
-            版本 v1.1.1
+            版本 v1.2.0 - 增強安全性和性能
         </div>
     </div>
 
@@ -103,15 +105,17 @@
 
 
     <script type="module">
+        // --- v1.2.0: 增強版本 - 改進安全性、性能和錯誤處理 ---
+
         // --- DOM 元素 ---
         const wordInput = document.getElementById('word-input');
         const generateButton = document.getElementById('generate-button');
-        const clearButton = document.getElementById('clear-button'); 
+        const clearButton = document.getElementById('clear-button');
         const passageStatus = document.getElementById('passage-status');
-        
+
         const outputSection = document.getElementById('output-section');
         const passageDisplay = document.getElementById('passage-display');
-        
+
         const translateButton = document.getElementById('translate-button');
         const translationSection = document.getElementById('translation-section');
         const translationDisplay = document.getElementById('translation-display');
@@ -120,21 +124,20 @@
         const playButton = document.getElementById('play-button');
         const audioPlayer = document.getElementById('audio-player');
         const audioStatus = document.getElementById('audio-status');
-        // v1.1.1 新增
         const restartButtonBottom = document.getElementById('restart-button-bottom');
 
-        // --- API 設定 (v1.1.0 修改) ---
-        // 不再需要 API Key，它存在於後端伺服器上。
-        
-        // 舊的：
-        // const textGenApiUrl = `https://generativelanguage.googleapis.com...`;
-        // const ttsApiUrl = `https://generativelanguage.googleapis.com...`;
-
-        // 新的：指向 Netlify 伺服器功能 (相對路徑)
-        // 注意：我們移除了 ?key=${apiKey}，因為金鑰在後端處理
+        // --- API 設定 ---
         const textGenApiUrl = `/.netlify/functions/generate-text`;
         const ttsApiUrl = `/.netlify/functions/generate-audio`;
-        // --- 修改結束 ---
+
+        // --- 配置常量 ---
+        const MAX_INPUT_LENGTH = 500; // 最大輸入字符數
+        const MAX_WORDS = 50; // 最大單詞數
+        const REQUEST_TIMEOUT = 60000; // 請求超時 (60 秒)
+
+        // --- 狀態管理 ---
+        let currentAudioUrl = null; // 追蹤當前音頻 URL 以便清理
+        let wordHighlightRegexCache = null; // 緩存正則表達式
 
 
         // --- 事件監聽 ---
@@ -146,6 +149,56 @@
         restartButtonBottom.addEventListener('click', handleClear);
 
         /**
+         * 清理舊的音頻 URL 以防止內存洩漏
+         */
+        function cleanupAudioUrl() {
+            if (currentAudioUrl) {
+                URL.revokeObjectURL(currentAudioUrl);
+                currentAudioUrl = null;
+            }
+        }
+
+        /**
+         * 安全的文本轉義（防止 XSS）
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * 驗證輸入
+         */
+        function validateInput(words) {
+            // 檢查長度
+            if (words.length > MAX_INPUT_LENGTH) {
+                return {
+                    valid: false,
+                    error: `輸入過長！最多 ${MAX_INPUT_LENGTH} 個字符（當前: ${words.length}）。`
+                };
+            }
+
+            const inputWords = words.split(/[\s,、]+/).filter(Boolean);
+
+            if (inputWords.length === 0) {
+                return {
+                    valid: false,
+                    error: "請輸入有效的單字。"
+                };
+            }
+
+            if (inputWords.length > MAX_WORDS) {
+                return {
+                    valid: false,
+                    error: `單詞數量過多！最多 ${MAX_WORDS} 個（當前: ${inputWords.length}）。`
+                };
+            }
+
+            return { valid: true, words: inputWords };
+        }
+
+        /**
          * 處理：生成短文
          */
         async function handleGeneratePassage() {
@@ -155,62 +208,76 @@
                 return;
             }
 
-            const inputWords = words.split(/[\s,、]+/).filter(Boolean);
-
-            if (inputWords.length === 0) {
-                setStatus(passageStatus, "請輸入有效的單字。", "error");
+            // 驗證輸入
+            const validation = validateInput(words);
+            if (!validation.valid) {
+                setStatus(passageStatus, validation.error, "error");
                 return;
             }
 
+            const inputWords = validation.words;
+
             setLoading(generateButton, true);
             setStatus(passageStatus, "短文生成中，請稍候...", "info");
-            outputSection.classList.add('hidden'); 
-            passageDisplay.innerHTML = ""; 
-            audioPlayer.src = ""; 
+            outputSection.classList.add('hidden');
+            passageDisplay.textContent = "";
+            cleanupAudioUrl(); // 清理舊音頻
+            audioPlayer.src = "";
 
             translationSection.classList.add('hidden');
             translationDisplay.textContent = "";
             setStatus(translationStatus, "", "info");
+            wordHighlightRegexCache = null; // 清除緩存
 
             const prompt = `You MUST write a short, coherent paragraph (about 2-3 sentences) that uses ALL of the following English words: ${inputWords.join(', ')}. Every single word from the list must be included. Do not add any preamble. Only return the paragraph text.`;
 
             try {
-                // v1.1.0 修改：Payload 現在是我們發送到 *自己* 伺服器的內容
                 const payload = {
-                    // 我們的後端代理將會讀取這個 'prompt' 
                     prompt: prompt,
-                    // 我們的後端代理也會讀取這個 'systemInstruction'
                     systemInstruction: "You are a helpful assistant. You must generate a single paragraph that uses all the user's provided words. Output only the paragraph text, with no preamble or any other text."
                 };
 
-                const response = await fetchWithBackoff(textGenApiUrl, {
+                const response = await fetchWithTimeout(textGenApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    // v1.1.0 修改：我們將 prompt 包裝在一個 JSON 物件中
                     body: JSON.stringify(payload)
-                });
+                }, REQUEST_TIMEOUT);
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `API 請求失敗: ${response.status}`);
                 }
 
-                // v1.1.0 修改：回應 *來自* 我們的伺服器，它已經包含了 Google 的回應
-                const result = await response.json();
+                let result;
+                try {
+                    result = await response.json();
+                } catch (jsonError) {
+                    throw new Error("無法解析伺服器響應。");
+                }
+
                 const passage = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
                 if (passage) {
-                    const escapedWords = inputWords.map(word => word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
-                    const regex = new RegExp(`\\b(${escapedWords.join('|')})\\b`, 'gi');
-                    const highlightedPassage = passage.replace(regex, '<mark class="bg-yellow-200 rounded px-1">$1</mark>');
-                    
-                    passageDisplay.innerHTML = highlightedPassage; 
-                    outputSection.classList.remove('hidden'); 
+                    // 安全地高亮單詞（防止 XSS）
+                    const escapedWords = inputWords.map(word =>
+                        word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
+                    );
+                    wordHighlightRegexCache = new RegExp(`\\b(${escapedWords.join('|')})\\b`, 'gi');
+
+                    // 先轉義整個文本，然後高亮匹配的單詞
+                    const escapedPassage = escapeHtml(passage);
+                    const highlightedPassage = escapedPassage.replace(
+                        wordHighlightRegexCache,
+                        '<mark class="bg-yellow-200 rounded px-1">$1</mark>'
+                    );
+
+                    passageDisplay.innerHTML = highlightedPassage;
+                    outputSection.classList.remove('hidden');
                     setStatus(passageStatus, "短文生成成功！", "success");
-                    setStatus(audioStatus, "", "info"); 
+                    setStatus(audioStatus, "", "info");
                 } else {
-                    // 如果 Google API 出錯，result 可能會包含錯誤訊息
                     if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
+                        throw new Error(`API 錯誤: ${result.error.message}`);
                     }
                     throw new Error("API 未返回有效內容。");
                 }
@@ -235,37 +302,43 @@
 
             setLoading(translateButton, true);
             setStatus(translationStatus, "翻譯中...", "info");
-            translationSection.classList.add('hidden'); 
+            translationSection.classList.add('hidden');
 
             const prompt = `Translate the following English text to Traditional Chinese: "${textToTranslate}". Only return the Traditional Chinese text, nothing else.`;
 
             try {
-                // v1.1.0 修改：Payload 發送到我們的後端
                 const payload = {
                     prompt: prompt,
                     systemInstruction: "You are a helpful assistant. You only output the Traditional Chinese translation, with no preamble or any other text."
                 };
 
-                const response = await fetchWithBackoff(textGenApiUrl, { // 重複使用 textGenApiUrl
+                const response = await fetchWithTimeout(textGenApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                });
+                }, REQUEST_TIMEOUT);
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `API 請求失敗: ${response.status}`);
                 }
 
-                const result = await response.json();
+                let result;
+                try {
+                    result = await response.json();
+                } catch (jsonError) {
+                    throw new Error("無法解析伺服器響應。");
+                }
+
                 const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
                 if (translatedText) {
                     translationDisplay.textContent = translatedText;
-                    translationSection.classList.remove('hidden'); 
+                    translationSection.classList.remove('hidden');
                     setStatus(translationStatus, "翻譯成功！", "success");
                 } else {
                     if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
+                        throw new Error(`API 錯誤: ${result.error.message}`);
                     }
                     throw new Error("API 未返回有效的翻譯內容。");
                 }
@@ -283,7 +356,7 @@
          * 處理：播放語音 (英文原文)
          */
         async function handlePlayAudio() {
-            const textToSpeak = passageDisplay.textContent; 
+            const textToSpeak = passageDisplay.textContent;
             if (!textToSpeak) {
                 setStatus(audioStatus, "沒有可播放的文字。", "error");
                 return;
@@ -293,24 +366,28 @@
             setStatus(audioStatus, "語音生成中...", "info");
 
             try {
-                // v1.1.0 修改：Payload 發送到我們的後端
                 const payload = {
                     text: `Say clearly: ${textToSpeak}`
                 };
 
-                const response = await fetchWithBackoff(ttsApiUrl, { // 呼叫 ttsApiUrl
+                const response = await fetchWithTimeout(ttsApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                });
+                }, REQUEST_TIMEOUT);
 
                 if (!response.ok) {
-                    throw new Error(`API 請求失敗: ${response.status} ${response.statusText}`);
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `API 請求失敗: ${response.status}`);
                 }
 
-                // v1.1.0 修改：回應來自我們的伺服器
-                const result = await response.json();
-                
+                let result;
+                try {
+                    result = await response.json();
+                } catch (jsonError) {
+                    throw new Error("無法解析伺服器響應。");
+                }
+
                 const part = result?.candidates?.[0]?.content?.parts?.[0];
                 const audioData = part?.inlineData?.data;
                 const mimeType = part?.inlineData?.mimeType;
@@ -322,19 +399,28 @@
                     }
                     const sampleRate = parseInt(sampleRateMatch[1], 10);
 
-                    const pcmData = base64ToArrayBuffer(audioData);
-                    const pcm16 = new Int16Array(pcmData);
-                    const wavBlob = pcmToWav(pcm16, sampleRate);
-                    const audioUrl = URL.createObjectURL(wavBlob);
-                    
-                    audioPlayer.src = audioUrl;
-                    audioPlayer.play();
-                    
-                    setStatus(audioStatus, "播放中...", "success");
+                    // 使用 try-catch 保護音頻轉換
+                    try {
+                        const pcmData = base64ToArrayBuffer(audioData);
+                        const pcm16 = new Int16Array(pcmData);
+                        const wavBlob = pcmToWav(pcm16, sampleRate);
+
+                        // 清理舊的音頻 URL
+                        cleanupAudioUrl();
+
+                        // 創建新的音頻 URL
+                        currentAudioUrl = URL.createObjectURL(wavBlob);
+                        audioPlayer.src = currentAudioUrl;
+                        await audioPlayer.play();
+
+                        setStatus(audioStatus, "播放中...", "success");
+                    } catch (audioError) {
+                        throw new Error(`音頻處理失敗: ${audioError.message}`);
+                    }
 
                 } else {
                     if (result.error) {
-                         throw new Error(`Google API 錯誤: ${result.error.message}`);
+                        throw new Error(`API 錯誤: ${result.error.message}`);
                     }
                     throw new Error("從 API 回應中找不到有效的音訊數據。");
                 }
@@ -353,19 +439,22 @@
         function handleClear() {
             wordInput.value = "";
             outputSection.classList.add('hidden');
-            passageDisplay.innerHTML = ""; 
+            passageDisplay.textContent = "";
+            cleanupAudioUrl(); // 清理音頻 URL
             audioPlayer.src = "";
             audioPlayer.pause();
             setStatus(passageStatus, "", "info");
             setStatus(audioStatus, "", "info");
-            
+
             translationSection.classList.add('hidden');
-            translationDisplay.innerHTML = "";
+            translationDisplay.textContent = "";
             setStatus(translationStatus, "", "info");
-            
+
+            wordHighlightRegexCache = null; // 清除緩存
+
             setLoading(generateButton, false);
             setLoading(playButton, false);
-            setLoading(translateButton, false); 
+            setLoading(translateButton, false);
         }
 
         // --- 輔助函式 (保持不變) ---
@@ -391,34 +480,67 @@
             }
         }
         
-        async function fetchWithBackoff(url, options, maxRetries = 3) {
-            let delay = 1000; 
+        /**
+         * 帶超時和重試的 fetch（支持退避策略）
+         */
+        async function fetchWithTimeout(url, options, timeout = REQUEST_TIMEOUT, maxRetries = 3) {
+            let delay = 1000;
+
             for (let i = 0; i < maxRetries; i++) {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+
                 try {
-                    // v1.1.0 修改：不再需要 fetch(url, options) 中的 window.fetch
-                    // 我們可以直接使用 fetch
-                    const response = await fetch(url, options);
+                    const response = await fetch(url, {
+                        ...options,
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    // 對於速率限制和伺服器錯誤，進行重試
                     if (response.status === 429 || (response.status >= 500 && response.status <= 599)) {
-                        // 我們的伺服器或 Google API 可能會過載
-                        throw new Error(`Server error ${response.status}`);
+                        if (i < maxRetries - 1) {
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                            delay *= 2;
+                            continue;
+                        }
                     }
+
                     return response;
+
                 } catch (error) {
-                    if (i === maxRetries - 1) throw error; 
+                    clearTimeout(timeoutId);
+
+                    if (error.name === 'AbortError') {
+                        throw new Error(`請求超時（${timeout / 1000} 秒）。請稍後重試。`);
+                    }
+
+                    if (i === maxRetries - 1) {
+                        throw error;
+                    }
+
                     await new Promise(resolve => setTimeout(resolve, delay));
-                    delay *= 2; 
+                    delay *= 2;
                 }
             }
         }
 
+        /**
+         * 優化的 Base64 解碼（更高效）
+         */
         function base64ToArrayBuffer(base64) {
-            const binaryString = atob(base64);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
+            try {
+                const binaryString = atob(base64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            } catch (error) {
+                throw new Error(`Base64 解碼失敗: ${error.message}`);
             }
-            return bytes.buffer;
         }
 
         function pcmToWav(pcmData, sampleRate) {
